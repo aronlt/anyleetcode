@@ -8,40 +8,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (a *App) NewSavedFileNames() *widget.Select {
-	filenames, err := a.lcApi.LoadResultFiles()
-	if err != nil {
-		panic(err)
-	}
-	return widget.NewSelect(filenames, func(s string) {
-	})
-}
-
-func (a *App) ReloadSetSaveFileSelect() {
-	filenames, err := a.lcApi.LoadResultFiles()
-	if err != nil {
-		panic(err)
-	}
-	a.saveFileSelect.Options = filenames
-	a.saveFileSelect.Refresh()
-}
-
-func (a *App) SetSaveFileSelect() {
-	filepaths, err := a.lcApi.LoadResultFiles()
-	if err != nil {
-		panic(err)
-	}
-	a.saveFileSelect = widget.NewSelect(filepaths, func(s string) {
-	})
-}
-
-func (a *App) NewSavedFileZone() *fyne.Container {
-	return container.NewHBox(
-		widget.NewLabel("保存文件:"),
-		a.saveFileSelect,
-	)
-}
-
 func (a *App) NewDiffZone(diffs []string) *fyne.Container {
 	diffLabel := widget.NewLabel(a.SetToString(a.sDiff))
 	diffZone := container.NewHBox(
@@ -59,7 +25,7 @@ func (a *App) NewDiffZone(diffs []string) *fyne.Container {
 		diffLabel,
 	)
 
-	return container.NewHBox(diffZone, selectedDiffZone)
+	return container.NewVBox(diffZone, selectedDiffZone)
 }
 
 func (a *App) NewTagZone(tags []string) *fyne.Container {
@@ -80,7 +46,7 @@ func (a *App) NewTagZone(tags []string) *fyne.Container {
 		tagLabel,
 	)
 
-	return container.NewHBox(tagZone, selectedTagsZone)
+	return container.NewVBox(tagZone, selectedTagsZone)
 }
 
 func (a *App) NewRateZone() *fyne.Container {
@@ -116,15 +82,12 @@ func (a *App) NewEditZone() *fyne.Container {
 	tagZone := a.NewTagZone(tags)
 	rateZone := a.NewRateZone()
 	submitCountZone := a.NewRankZone()
-	a.SetSaveFileSelect()
-	savedFileZone := a.NewSavedFileZone()
 	actionZone := a.NewActionZone()
 	zone := container.NewVBox(
 		tagZone,
 		diffZone,
 		rateZone,
 		submitCountZone,
-		savedFileZone,
 		actionZone,
 	)
 	return zone

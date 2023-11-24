@@ -32,7 +32,6 @@ type App struct {
 	window          fyne.Window
 	sTags           ds.BuiltinSet[string]
 	sDiff           ds.BuiltinSet[string]
-	saveFileSelect  *widget.Select
 	rate            int
 	submitCountRank int
 }

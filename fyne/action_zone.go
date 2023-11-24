@@ -82,7 +82,6 @@ func (a *App) NewGenButton() *widget.Button {
 		}
 
 		a.clearDisplay()
-		a.saveFileSelect.Selected = ""
 		if len(result) != 0 {
 			sort.Slice(result, func(i, j int) bool {
 				if result[i].AcRate == result[j].AcRate {
@@ -93,10 +92,11 @@ func (a *App) NewGenButton() *widget.Button {
 
 			ds.SliceIter(result, func(r []*leetcode.Problem, i int) {
 				u, _ := url.Parse(r[i].Url)
-				title := fmt.Sprintf("%d. title:%s;  ac_rate:%d; total_submit:%d; topics:%s", i+1, r[i].Title, r[i].AcRate, r[i].SubmissionCount, strings.Join(r[i].TopicTags, ","))
+				title := fmt.Sprintf("%d. 题目:%s;  标签:%s", i+1, r[i].Title, strings.Join(r[i].TopicTags, ","))
 				link := widget.NewHyperlink(title, u)
 				link.OnTapped = a.newOnTapFunc(r[i].Url, link)
 				a.undoDisplay.Add(link)
+				a.undoProblemMap[r[i].Url] = link
 			})
 		}
 		a.refreshDisplay()
@@ -104,95 +104,7 @@ func (a *App) NewGenButton() *widget.Button {
 	return button
 }
 
-func (a *App) NewLoadButton() *widget.Button {
-	button := widget.NewButton("加载文件", func() {
-		if a.saveFileSelect.Selected == "" {
-			return
-		}
-		result, err := a.lcApi.LoadResult(a.saveFileSelect.Selected)
-		if err != nil {
-			panic(err)
-		}
-		a.clearDisplay()
-		ds.SliceIter(result, func(b []*leetcode.HyperLink, i int) {
-			u, _ := url.Parse(b[i].Link)
-			link := widget.NewHyperlink(b[i].Text, u)
-			link.OnTapped = a.newOnTapFunc(b[i].Link, link)
-			if b[i].Type == leetcode.Done {
-				a.doneDisplay.Objects = append(a.doneDisplay.Objects, link)
-				a.doneProblemMap[b[i].Link] = link
-			} else {
-				a.undoDisplay.Objects = append(a.undoDisplay.Objects, link)
-				a.undoProblemMap[b[i].Link] = link
-			}
-		})
-		a.refreshDisplay()
-		a.dialog.Show()
-	})
-	return button
-}
-
-func (a *App) NewDeleteButton() *widget.Button {
-	button := widget.NewButton("删除文件", func() {
-		if a.saveFileSelect.Selected == "" {
-			return
-		}
-		err := a.lcApi.RemoveResult(a.saveFileSelect.Selected)
-		if err != nil {
-			panic(err)
-		}
-		a.saveFileSelect.Selected = ""
-		a.ReloadSetSaveFileSelect()
-		a.clearDisplay()
-		a.refreshDisplay()
-		a.dialog.Show()
-	})
-	return button
-}
-
-func (a *App) NewSaveButton() *widget.Button {
-	button := widget.NewButton("保存文件", func() {
-		if len(a.undoDisplay.Objects) == 0 && len(a.doneDisplay.Objects) == 0 {
-			return
-		}
-		links := make([]*leetcode.HyperLink, 0, len(a.doneDisplay.Objects))
-		for _, obj := range a.doneDisplay.Objects {
-			link := obj.(*widget.Hyperlink)
-			text := link.Text
-			u := link.URL.String()
-			hyperLink := &leetcode.HyperLink{
-				Text: text,
-				Link: u,
-				Type: leetcode.Done,
-			}
-			links = append(links, hyperLink)
-		}
-		for _, obj := range a.undoDisplay.Objects {
-			link := obj.(*widget.Hyperlink)
-			text := link.Text
-			u := link.URL.String()
-			hyperLink := &leetcode.HyperLink{
-				Text: text,
-				Link: u,
-				Type: leetcode.Undo,
-			}
-			links = append(links, hyperLink)
-		}
-		var err error
-		err = a.lcApi.StoreResult(links, a.saveFileSelect.Selected)
-		if err != nil {
-			panic(err)
-		}
-		a.ReloadSetSaveFileSelect()
-		a.dialog.Show()
-	})
-	return button
-}
-
 func (a *App) NewActionZone() *fyne.Container {
 	genButton := a.NewGenButton()
-	loadButton := a.NewLoadButton()
-	saveButton := a.NewSaveButton()
-	deleteButton := a.NewDeleteButton()
-	return container.NewHBox(genButton, loadButton, saveButton, deleteButton)
+	return container.NewHBox(genButton)
 }
