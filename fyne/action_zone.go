@@ -68,6 +68,20 @@ func (a *App) newOnTapFunc(url string, link *widget.Hyperlink) func() {
 	}
 }
 
+func (a *App) NewCleanButton() *widget.Button {
+	button := widget.NewButton("重置", func() {
+		a.sTags.Clear()
+		a.sDiff.Clear()
+		a.rate = 0
+		a.submitCountRank = 0
+		a.clearDisplay()
+		a.Init()
+	})
+
+	return button
+
+}
+
 func (a *App) NewGenButton() *widget.Button {
 	button := widget.NewButton("生成题目列表", func() {
 		result, err := a.lcApi.Query(&leetcode.SearchCond{
@@ -106,5 +120,6 @@ func (a *App) NewGenButton() *widget.Button {
 
 func (a *App) NewActionZone() *fyne.Container {
 	genButton := a.NewGenButton()
-	return container.NewHBox(genButton)
+	cleanButton := a.NewCleanButton()
+	return container.NewHBox(genButton, cleanButton)
 }

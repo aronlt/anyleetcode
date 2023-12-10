@@ -73,6 +73,7 @@ func (a *App) Init() {
 		displayZone,
 	)
 	a.window.SetContent(main)
+	a.clearDisplay()
 }
 
 func NewApp() *App {
