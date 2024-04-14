@@ -2,11 +2,9 @@ package fyne
 
 import (
 	"embed"
-	"os"
 	"sort"
 	"strings"
 
-	"anyleetcode/common"
 	"anyleetcode/leetcode"
 
 	"fyne.io/fyne/v2"
@@ -15,8 +13,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/aronlt/toolkit/ds"
-	"github.com/aronlt/toolkit/tio"
-	"github.com/golang/freetype/truetype"
 )
 
 //go:embed font
@@ -32,22 +28,9 @@ type App struct {
 	window          fyne.Window
 	sTags           ds.BuiltinSet[string]
 	sDiff           ds.BuiltinSet[string]
+	cookie          string
 	rate            int
 	submitCountRank int
-}
-
-func init() {
-	fontData, err := f.ReadFile("font/simkai.ttf")
-	if err != nil {
-		panic(err)
-	}
-	_, err = truetype.Parse(fontData)
-	if err != nil {
-		panic(err)
-	}
-	tio.WriteFile(common.GetFontPath(), fontData, false)
-
-	os.Setenv("FYNE_FONT", common.GetFontPath())
 }
 
 func (a *App) SetToString(set ds.BuiltinSet[string]) string {
@@ -78,12 +61,12 @@ func (a *App) Init() {
 
 func NewApp() *App {
 	api := leetcode.NewApi()
-	window := app.New().NewWindow("力扣选题")
+	window := app.New().NewWindow("Leetcode Helper")
 	window.Resize(fyne.Size{
 		Width:  1000,
 		Height: 1000,
 	})
-	successDialog := dialog.NewInformation("结果", "成功", window)
+	successDialog := dialog.NewInformation("Result", "Success", window)
 	return &App{window: window, lcApi: api,
 		sTags:          ds.NewSet[string](),
 		sDiff:          ds.NewSet[string](),

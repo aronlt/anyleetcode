@@ -1,92 +1,96 @@
 package leetcode
 
 import (
-	"os"
-	"path/filepath"
+	"anyleetcode/utils"
+	"encoding/json"
+	"fmt"
+	"github.com/aronlt/toolkit/tjson"
+	"github.com/sirupsen/logrus"
 	"sort"
-
-	"anyleetcode/common"
 
 	"github.com/aronlt/toolkit/ds"
 	"github.com/aronlt/toolkit/terror"
 )
 
 type Manager struct {
-	storage *Storage
+	problems   []*Problem
+	tags       []string
+	difficulty []string
 }
 
 func NewManager() *Manager {
-	return &Manager{storage: NewStorage()}
-}
-
-func (m *Manager) RemoveResult(path string) error {
-	return os.Remove(filepath.Join(common.GetResultPath(), path))
-}
-
-func (m *Manager) LoadTags() ([]string, error) {
-	_, tags, _, err := m.storage.Load()
-	if err != nil {
-		return nil, terror.Wrap(err, "call storage.Load fail")
-	}
+	storage := NewStorage()
+	problems, tags, difficulty, err := storage.Load()
 	sort.Slice(tags, func(i, j int) bool {
 		return tags[i] < tags[j]
 	})
-	return tags, nil
-}
-func (m *Manager) LoadDifficulty() ([]string, error) {
-	_, _, difficulty, err := m.storage.Load()
-	if err != nil {
-		return nil, terror.Wrap(err, "call storage.Load fail")
-	}
 	sort.Slice(difficulty, func(i, j int) bool {
 		return difficulty[i] < difficulty[j]
 	})
-	return difficulty, nil
-}
-
-func (m *Manager) LoadResultFiles() ([]string, error) {
-	files, err := m.storage.LoadResultFiles()
 	if err != nil {
-		err = terror.Wrap(err, "call LoadResultFiles fail")
-		return nil, err
+		err = terror.Wrap(err, "call storage.Load fail")
+		panic(err)
 	}
-	filenames := make([]string, 0, len(files))
-	for _, file := range files {
-		name := filepath.Base(file)
-		filenames = append(filenames, name)
-	}
-	return filenames, nil
+	return &Manager{problems: problems, tags: tags, difficulty: difficulty}
 }
 
-func (m *Manager) LoadResult(path string) ([]*HyperLink, error) {
-	return m.storage.LoadResultContent(path)
+func (m *Manager) checkAC(cookie string, slug string) bool {
+	args := fmt.Sprintf(`{"query":"\n    query submissionList($offset: Int!, $limit: Int!, $lastKey: String, $questionSlug: String!, $lang: String, $status: SubmissionStatusEnum) {\n  submissionList(\n    offset: $offset\n    limit: $limit\n    lastKey: $lastKey\n    questionSlug: $questionSlug\n    lang: $lang\n    status: $status\n  ) {\n    lastKey\n    hasNext\n    submissions {\n      id\n      title\n      status\n      statusDisplay\n      lang\n      langName: langVerboseName\n      runtime\n      timestamp\n      url\n      isPending\n      memory\n      submissionComment {\n        comment\n        flagType\n      }\n    }\n  }\n}\n    ","variables":{"questionSlug":"%s","offset":0,"limit":20,"lastKey":null,"status":null},"operationName":"submissionList"}`, slug)
+	resp, err := utils.DoQuery([]byte(args), cookie)
+	if err != nil {
+		logrus.WithError(err).Errorf("call DoQuery fail")
+		return false
+	}
+	type Submission struct {
+		ID            string `json:"id"`
+		Title         string `json:"title"`
+		Status        string `json:"status"`
+		StatusDisplay string `json:"statusDisplay"`
+		Lang          string `json:"lang"`
+		LangName      string `json:"langName"`
+		Runtime       string `json:"runtime"`
+		Timestamp     string `json:"timestamp"`
+		URL           string `json:"url"`
+		IsPending     string `json:"isPending"`
+		Memory        string `json:"memory"`
+	}
+	raw, err := tjson.GetRawMessage(resp, "data.submissionList.submissions")
+	if err != nil {
+		logrus.WithError(err).Errorf("call GetRawMessage fail, resp: %s", string(resp))
+		return false
+	}
+	values := make([]*Submission, 0)
+	err = json.Unmarshal(raw, &values)
+	if err != nil {
+		logrus.WithError(err).Errorf("call GetRawMessage fail, resp: %s", string(resp))
+		return false
+	}
+	for _, v := range values {
+		if v.Status == "AC" {
+			return true
+		}
+	}
+	return false
 }
 
-func (m *Manager) StoreResult(links []*HyperLink, path string) error {
-	return m.storage.StoreResult(links, path)
+func (m *Manager) LoadTags() []string {
+	return m.tags
+}
+func (m *Manager) LoadDifficulty() []string {
+	return m.difficulty
 }
 
 func (m *Manager) Query(cond *SearchCond) ([]*Problem, error) {
-	problems, _, _, err := m.storage.Load()
-	if err != nil {
-		err = terror.Wrap(err, "call storage.Load fail")
-		return nil, err
-	}
-	if cond.SubmissionCountRank != 0 {
-		sort.Slice(problems, func(i, j int) bool {
-			return problems[i].SubmissionCount > problems[j].SubmissionCount
-		})
-		size := int(float32(cond.SubmissionCountRank) / float32(100) * float32(len(problems)))
-		problems = problems[:size]
-	}
+	problems := m.problems
+
 	result := ds.SliceGetFilter(problems, func(i int) bool {
-		if cond.AcRate != 0 {
-			if problems[i].AcRate <= cond.AcRate {
+		if len(cond.Difficulty) != 0 {
+			if !ds.SliceInclude(cond.Difficulty, problems[i].Difficulty) {
 				return false
 			}
 		}
-		if len(cond.Difficulty) != 0 {
-			if !ds.SliceInclude(cond.Difficulty, problems[i].Difficulty) {
+		if cond.AcRate != 0 {
+			if problems[i].AcRate <= cond.AcRate {
 				return false
 			}
 		}
@@ -99,7 +103,23 @@ func (m *Manager) Query(cond *SearchCond) ([]*Problem, error) {
 		}
 		return true
 	})
+	if cond.SubmissionCountRank != 0 {
+		sort.Slice(problems, func(i, j int) bool {
+			return problems[i].SubmissionCount > problems[j].SubmissionCount
+		})
+		size := int(float32(cond.SubmissionCountRank) / float32(100) * float32(len(problems)))
+		problems = problems[:size]
+	}
 	count := ds.SliceMinUnpack(len(result), cond.Count)
 	ds.SliceOpShuffle(result)
-	return result[:count], nil
+	result = result[:count]
+	if cond.Cookie != "" {
+		ds.SliceIterV2(result, func(i int) {
+			if result[i].CheckAC == false {
+				result[i].HasAC = m.checkAC(cond.Cookie, result[i].Slug)
+				result[i].CheckAC = true
+			}
+		})
+	}
+	return result, nil
 }

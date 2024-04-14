@@ -13,6 +13,9 @@ type Problem struct {
 	Title           string
 	Url             string
 	TopicTags       []string
+	HasAC           bool
+	CheckAC         bool
+	Slug            string
 }
 
 type HyperLink struct {
@@ -27,4 +30,5 @@ type SearchCond struct {
 	Difficulty          []string
 	TopicTags           []string
 	Count               int
+	Cookie              string
 }

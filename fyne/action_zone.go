@@ -69,7 +69,7 @@ func (a *App) newOnTapFunc(url string, link *widget.Hyperlink) func() {
 }
 
 func (a *App) NewCleanButton() *widget.Button {
-	button := widget.NewButton("重置", func() {
+	button := widget.NewButton("Reset", func() {
 		a.sTags.Clear()
 		a.sDiff.Clear()
 		a.rate = 0
@@ -83,11 +83,12 @@ func (a *App) NewCleanButton() *widget.Button {
 }
 
 func (a *App) NewGenButton() *widget.Button {
-	button := widget.NewButton("生成题目列表", func() {
+	button := widget.NewButton("Generate Problems", func() {
 		result, err := a.lcApi.Query(&leetcode.SearchCond{
 			Difficulty:          a.sDiff.Keys(),
 			TopicTags:           a.sTags.Keys(),
 			AcRate:              a.rate,
+			Cookie:              a.cookie,
 			SubmissionCountRank: a.submitCountRank,
 			Count:               10,
 		})
@@ -106,7 +107,11 @@ func (a *App) NewGenButton() *widget.Button {
 
 			ds.SliceIter(result, func(r []*leetcode.Problem, i int) {
 				u, _ := url.Parse(r[i].Url)
-				title := fmt.Sprintf("%d. 题目:%s;  标签:%s", i+1, r[i].Title, strings.Join(r[i].TopicTags, ","))
+				ac := "否"
+				if r[i].HasAC {
+					ac = "是"
+				}
+				title := fmt.Sprintf("%d. %s 做过:%s 标签:%s", i+1, r[i].Title, ac, strings.Join(r[i].TopicTags, ","))
 				link := widget.NewHyperlink(title, u)
 				link.OnTapped = a.newOnTapFunc(r[i].Url, link)
 				a.undoDisplay.Add(link)

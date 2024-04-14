@@ -1,16 +1,11 @@
 package leetcode
 
 import (
+	"anyleetcode/common"
 	"embed"
 	"encoding/json"
-	"path/filepath"
-	"time"
-
-	"anyleetcode/common"
 
 	"github.com/aronlt/toolkit/terror"
-	"github.com/aronlt/toolkit/tio"
-	"github.com/aronlt/toolkit/tutils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -60,43 +55,6 @@ func (s *Storage) LoadDifficulty() error {
 	return nil
 }
 
-func (s *Storage) LoadResultFiles() ([]string, error) {
-	_, files, err := tio.ReadDir(common.GetResultPath())
-	return files, err
-}
-
-func (s *Storage) LoadResultContent(path string) ([]*HyperLink, error) {
-	content, err := tio.ReadFile(filepath.Join(common.GetResultPath(), path))
-	if err != nil {
-		err = terror.Wrap(err, "call ReadFile fail, filepath:"+path)
-		return nil, err
-	}
-	result := make([]*HyperLink, 0)
-	err = json.Unmarshal(content, &result)
-	if err != nil {
-		err = terror.Wrap(err, "call Unmarshal fail, filepath:"+path)
-		return nil, err
-	}
-	return result, nil
-}
-
-func (s *Storage) StoreResult(links []*HyperLink, path string) error {
-	content, err := json.MarshalIndent(links, "", " ")
-	if err != nil {
-		panic(err)
-	}
-	if path == "" {
-		t := tutils.TimeToString(time.Now(), "2006-01-02_15:04:05")
-		path = t + ".json"
-	}
-	_, err = tio.WriteFile(filepath.Join(common.GetResultPath(), path), content, false)
-	if err != nil {
-		err = terror.Wrap(err, "call WriteFile fail")
-		return err
-	}
-	return nil
-}
-
 func (s *Storage) Load() ([]*Problem, []string, []string, error) {
 	if len(s.problems) != 0 {
 		return s.problems, s.tags, s.difficulty, nil
@@ -109,7 +67,6 @@ func (s *Storage) Load() ([]*Problem, []string, []string, error) {
 		err = terror.Wrap(err, "call LoadFromFile fail")
 		return nil, nil, nil, err
 	} else {
-		tio.Mkdirs(common.GetResultPath())
 		s.problems = problems
 		err = s.LoadTags()
 		if err != nil {
