@@ -10,7 +10,7 @@
 bash build.sh
 ```
 
-output目录下可以直接下载应用
+mac用户可直接在release中下载leetcode.zip附件，直接解压即可
 
 ## 效果图
 ![效果图](static/img.jpg)
