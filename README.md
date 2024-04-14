@@ -13,4 +13,4 @@ bash build.sh
 output目录下可以直接下载应用
 
 ## 效果图
-![效果图](static/img.png)
+![效果图](static/img.jpg)
