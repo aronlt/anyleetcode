@@ -7,6 +7,5 @@ import (
 )
 
 func (a *App) NewDisplayZone() *fyne.Container {
-
-	return container.NewVBox(widget.NewLabel("Unfinished"), a.undoDisplay, widget.NewLabel("Finished"), a.doneDisplay)
+	return container.NewVBox(widget.NewLabel("未访问"), a.UndoDisplay.Box, widget.NewLabel("已访问"), a.DoneDisplay.Box)
 }

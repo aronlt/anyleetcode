@@ -1,12 +1,17 @@
 package leetcode
 
 import (
+	"anyleetcode/common"
 	"anyleetcode/utils"
 	"encoding/json"
 	"fmt"
+	"github.com/aronlt/toolkit/tio"
 	"github.com/aronlt/toolkit/tjson"
 	"github.com/sirupsen/logrus"
+	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/aronlt/toolkit/ds"
 	"github.com/aronlt/toolkit/terror"
@@ -16,6 +21,7 @@ type Manager struct {
 	problems   []*Problem
 	tags       []string
 	difficulty []string
+	doneSlugs  ds.BuiltinSet[string]
 }
 
 func NewManager() *Manager {
@@ -31,46 +37,52 @@ func NewManager() *Manager {
 		err = terror.Wrap(err, "call storage.Load fail")
 		panic(err)
 	}
-	return &Manager{problems: problems, tags: tags, difficulty: difficulty}
+	done := LoadDoneSlugs()
+	return &Manager{problems: problems, tags: tags, difficulty: difficulty, doneSlugs: done}
 }
 
-func (m *Manager) checkAC(cookie string, slug string) bool {
-	args := fmt.Sprintf(`{"query":"\n    query submissionList($offset: Int!, $limit: Int!, $lastKey: String, $questionSlug: String!, $lang: String, $status: SubmissionStatusEnum) {\n  submissionList(\n    offset: $offset\n    limit: $limit\n    lastKey: $lastKey\n    questionSlug: $questionSlug\n    lang: $lang\n    status: $status\n  ) {\n    lastKey\n    hasNext\n    submissions {\n      id\n      title\n      status\n      statusDisplay\n      lang\n      langName: langVerboseName\n      runtime\n      timestamp\n      url\n      isPending\n      memory\n      submissionComment {\n        comment\n        flagType\n      }\n    }\n  }\n}\n    ","variables":{"questionSlug":"%s","offset":0,"limit":20,"lastKey":null,"status":null},"operationName":"submissionList"}`, slug)
-	resp, err := utils.DoQuery([]byte(args), cookie)
-	if err != nil {
-		logrus.WithError(err).Errorf("call DoQuery fail")
-		return false
-	}
-	type Submission struct {
-		ID            string `json:"id"`
-		Title         string `json:"title"`
-		Status        string `json:"status"`
-		StatusDisplay string `json:"statusDisplay"`
-		Lang          string `json:"lang"`
-		LangName      string `json:"langName"`
-		Runtime       string `json:"runtime"`
-		Timestamp     string `json:"timestamp"`
-		URL           string `json:"url"`
-		IsPending     string `json:"isPending"`
-		Memory        string `json:"memory"`
-	}
-	raw, err := tjson.GetRawMessage(resp, "data.submissionList.submissions")
-	if err != nil {
-		logrus.WithError(err).Errorf("call GetRawMessage fail, resp: %s", string(resp))
-		return false
-	}
-	values := make([]*Submission, 0)
-	err = json.Unmarshal(raw, &values)
-	if err != nil {
-		logrus.WithError(err).Errorf("call GetRawMessage fail, resp: %s", string(resp))
-		return false
-	}
-	for _, v := range values {
-		if v.Status == "AC" {
-			return true
+func (m *Manager) LoadDone(cookie string) error {
+	skip := 0
+	limit := 100
+	for {
+		args := fmt.Sprintf(`{"query":"\n    query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) {\n  problemsetQuestionList(\n    categorySlug: $categorySlug\n    limit: $limit\n    skip: $skip\n    filters: $filters\n  ) {\n    hasMore\n    total\n    questions {\n      acRate\n      difficulty\n      freqBar\n      frontendQuestionId\n      isFavor\n      paidOnly\n      solutionNum\n      status\n      title\n      titleCn\n      titleSlug\n      topicTags {\n        name\n        nameTranslated\n        id\n        slug\n      }\n      extra {\n        hasVideoSolution\n        topCompanyTags {\n          imgUrl\n          slug\n          numSubscribed\n        }\n      }\n    }\n  }\n}\n    ","variables":{"categorySlug":"all-code-essentials","skip":%d,"limit":%d,"filters":{"status":"AC"}},"operationName":"problemsetQuestionList"}`, skip, limit)
+		resp, err := utils.DoQuery([]byte(args), cookie)
+		if err != nil {
+			logrus.WithError(err).Errorf("call DoQuery fail")
+			return err
+		}
+		type Slug struct {
+			Slug string `json:"titleSlug"`
+		}
+
+		raw, err := tjson.GetRawMessage(resp, "data.problemsetQuestionList.questions")
+		if err != nil {
+			logrus.WithError(err).Errorf("call GetRawMessage fail, resp: %s", string(resp))
+			return err
+		}
+		values := make([]*Slug, 0)
+		err = json.Unmarshal(raw, &values)
+		if err != nil {
+			logrus.WithError(err).Errorf("call GetRawMessage fail, resp: %s", string(resp))
+			return err
+		}
+		for _, v := range values {
+			m.doneSlugs.Insert(v.Slug)
+		}
+		hasMore, err := tjson.GetBool(resp, "data.problemsetQuestionList.hasMore")
+		if err != nil {
+			logrus.WithError(err).Errorf("call GetRawMessage fail, resp: %s", string(resp))
+			return err
+		}
+		if hasMore {
+			skip += limit
+			time.Sleep(1 * time.Second)
+		} else {
+			break
 		}
 	}
-	return false
+	WriteDoneSlugs(m.doneSlugs)
+	return nil
 }
 
 func (m *Manager) LoadTags() []string {
@@ -80,10 +92,38 @@ func (m *Manager) LoadDifficulty() []string {
 	return m.difficulty
 }
 
+func WriteDoneSlugs(set ds.BuiltinSet[string]) {
+	slugs := ds.SetToSlice(set)
+	fp := filepath.Join(common.GetCachePath(), "done.txt")
+	content := strings.Join(slugs, "\n")
+	_, err := tio.WriteFile(fp, []byte(content), false)
+	if err != nil {
+		logrus.WithError(err).Errorf("call WriteFile fail, fp:%s", fp)
+	}
+	logrus.Infof("call WriteFile success, fp:%s", fp)
+}
+func LoadDoneSlugs() ds.BuiltinSet[string] {
+	result := ds.BuiltinSet[string]{}
+	fp := filepath.Join(common.GetCachePath(), "done.txt")
+	lines, err := tio.ReadLines(fp)
+	if err != nil {
+		logrus.Errorf("call ReadLines fail, fp:%s", fp)
+		return result
+	}
+	for _, line := range lines {
+		result.Insert(string(line))
+	}
+	logrus.Infof("load done slugs success, fp:%s", fp)
+	return result
+}
+
 func (m *Manager) Query(cond *SearchCond) ([]*Problem, error) {
 	problems := m.problems
-
+	for i := 0; i < 3; i++ {
+		ds.SliceOpShuffle(problems)
+	}
 	result := ds.SliceGetFilter(problems, func(i int) bool {
+		problems[i].HasAC = m.doneSlugs.Has(problems[i].Slug)
 		if len(cond.Difficulty) != 0 {
 			if !ds.SliceInclude(cond.Difficulty, problems[i].Difficulty) {
 				return false
@@ -94,6 +134,11 @@ func (m *Manager) Query(cond *SearchCond) ([]*Problem, error) {
 				return false
 			}
 		}
+		if cond.SubmissionCountRank != 0 {
+			if problems[i].SubmissionCount <= cond.SubmissionCountRank {
+				return false
+			}
+		}
 		if len(cond.TopicTags) != 0 {
 			setA := ds.SetFromSlice(cond.TopicTags)
 			setB := ds.SetFromSlice(problems[i].TopicTags)
@@ -101,25 +146,25 @@ func (m *Manager) Query(cond *SearchCond) ([]*Problem, error) {
 				return false
 			}
 		}
+		if len(cond.ExcludeTopicTags) != 0 {
+			setA := ds.SetFromSlice(cond.ExcludeTopicTags)
+			setB := ds.SetFromSlice(problems[i].TopicTags)
+			if setA.Intersection(setB).IsEmpty() == false {
+				return false
+			}
+		}
+		if cond.ProblemStatus != All {
+			if cond.ProblemStatus == OnlyDone && problems[i].HasAC == false {
+				return false
+			}
+			if cond.ProblemStatus == OnlyUndo && problems[i].HasAC == true {
+				return false
+			}
+		}
 		return true
 	})
-	if cond.SubmissionCountRank != 0 {
-		sort.Slice(problems, func(i, j int) bool {
-			return problems[i].SubmissionCount > problems[j].SubmissionCount
-		})
-		size := int(float32(cond.SubmissionCountRank) / float32(100) * float32(len(problems)))
-		problems = problems[:size]
-	}
+
 	count := ds.SliceMinUnpack(len(result), cond.Count)
-	ds.SliceOpShuffle(result)
 	result = result[:count]
-	if cond.Cookie != "" {
-		ds.SliceIterV2(result, func(i int) {
-			if result[i].CheckAC == false {
-				result[i].HasAC = m.checkAC(cond.Cookie, result[i].Slug)
-				result[i].CheckAC = true
-			}
-		})
-	}
 	return result, nil
 }

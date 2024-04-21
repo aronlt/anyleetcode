@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 
 	"anyleetcode/leetcode"
@@ -16,50 +15,42 @@ import (
 )
 
 func (a *App) clearDisplay() {
-	a.doneDisplay.Objects = a.doneDisplay.Objects[:0]
-	a.undoDisplay.Objects = a.undoDisplay.Objects[:0]
-	a.doneProblemMap = make(map[string]*widget.Hyperlink)
-	a.undoProblemMap = make(map[string]*widget.Hyperlink)
+	a.UndoDisplay.Clean()
+	a.DoneDisplay.Clean()
 }
+
 func (a *App) refreshDisplay() {
-	a.doneDisplay.Refresh()
-	a.undoDisplay.Refresh()
+	a.DoneDisplay.Refresh()
+	a.UndoDisplay.Refresh()
 }
 
 func (a *App) newOnTapFunc(url string, link *widget.Hyperlink) func() {
 	return func() {
-		if _, ok := a.doneProblemMap[url]; ok {
-			delete(a.doneProblemMap, url)
-			a.undoProblemMap[url] = link
-		} else {
-			delete(a.undoProblemMap, url)
-			a.doneProblemMap[url] = link
+		if v, ok := a.DoneDisplay.ProblemMap[url]; ok {
+			delete(a.DoneDisplay.ProblemMap, url)
+			a.UndoDisplay.ProblemMap[url] = v
+		} else if v, ok = a.UndoDisplay.ProblemMap[url]; ok {
+			delete(a.UndoDisplay.ProblemMap, url)
+			a.DoneDisplay.ProblemMap[url] = v
 		}
-		addDisplay := func(problemMap map[string]*widget.Hyperlink, display *fyne.Container) {
-			display.Objects = display.Objects[:0]
-			links := make([]*widget.Hyperlink, 0)
+		addDisplay := func(problemMap map[string]*ProblemUnit, display *fyne.Container) {
+			display.RemoveAll()
+			units := make([]*ProblemUnit, 0)
 			for _, v := range problemMap {
-				links = append(links, v)
+				units = append(units, v)
 			}
-			getIndex := func(text string) int {
-				index := text[:strings.Index(text, ".")]
-				num, err := strconv.Atoi(index)
-				if err != nil {
-					panic(err)
-				}
-				return num
-			}
-			sort.Slice(links, func(i, j int) bool {
-				indexa := getIndex(links[i].Text)
-				indexb := getIndex(links[j].Text)
-				return indexa < indexb
+
+			sort.Slice(units, func(i, j int) bool {
+				return units[i].Index < units[j].Index
 			})
-			ds.SliceIter(links, func(links []*widget.Hyperlink, i int) {
-				display.Objects = append(display.Objects, links[i])
+			ds.SliceIter(units, func(links []*ProblemUnit, i int) {
+				a.displayProblemUnit(display, links[i])
 			})
+			display.Refresh()
 		}
-		addDisplay(a.undoProblemMap, a.undoDisplay)
-		addDisplay(a.doneProblemMap, a.doneDisplay)
+		addDisplay(a.UndoDisplay.ProblemMap, a.UndoDisplay.Box)
+		addDisplay(a.DoneDisplay.ProblemMap, a.DoneDisplay.Box)
+		a.refreshDisplay()
 
 		err := fyne.CurrentApp().OpenURL(link.URL)
 		if err != nil {
@@ -69,10 +60,12 @@ func (a *App) newOnTapFunc(url string, link *widget.Hyperlink) func() {
 }
 
 func (a *App) NewCleanButton() *widget.Button {
-	button := widget.NewButton("Reset", func() {
+	button := widget.NewButton("重置", func() {
 		a.sTags.Clear()
+		a.sExcludeTags.Clear()
 		a.sDiff.Clear()
 		a.rate = 0
+		a.problemStatus = leetcode.All
 		a.submitCountRank = 0
 		a.clearDisplay()
 		a.Init()
@@ -83,10 +76,12 @@ func (a *App) NewCleanButton() *widget.Button {
 }
 
 func (a *App) NewGenButton() *widget.Button {
-	button := widget.NewButton("Generate Problems", func() {
+	button := widget.NewButton("生成题目", func() {
 		result, err := a.lcApi.Query(&leetcode.SearchCond{
 			Difficulty:          a.sDiff.Keys(),
 			TopicTags:           a.sTags.Keys(),
+			ExcludeTopicTags:    a.sExcludeTags.Keys(),
+			ProblemStatus:       a.problemStatus,
 			AcRate:              a.rate,
 			Cookie:              a.cookie,
 			SubmissionCountRank: a.submitCountRank,
@@ -111,11 +106,19 @@ func (a *App) NewGenButton() *widget.Button {
 				if r[i].HasAC {
 					ac = "是"
 				}
-				title := fmt.Sprintf("%d. %s 做过:%s 标签:%s", i+1, r[i].Title, ac, strings.Join(r[i].TopicTags, ","))
-				link := widget.NewHyperlink(title, u)
+				unit := &ProblemUnit{
+					Index: i + 1,
+					Title: fmt.Sprintf("%d. %s", i+1, r[i].Title),
+					Done:  fmt.Sprintf("是否做过: %s", ac),
+					Tags:  fmt.Sprintf("标签: %s", strings.Join(r[i].TopicTags, ",")),
+				}
+				link := widget.NewHyperlink(unit.Title, u)
 				link.OnTapped = a.newOnTapFunc(r[i].Url, link)
-				a.undoDisplay.Add(link)
-				a.undoProblemMap[r[i].Url] = link
+				unit.Link = link
+
+				a.displayProblemUnit(a.UndoDisplay.Box, unit)
+				a.UndoDisplay.ProblemMap[r[i].Url] = unit
+				a.UndoDisplay.Refresh()
 			})
 		}
 		a.refreshDisplay()
@@ -123,8 +126,25 @@ func (a *App) NewGenButton() *widget.Button {
 	return button
 }
 
+func (a *App) displayProblemUnit(display *fyne.Container, unit *ProblemUnit) {
+	display.Add(container.NewHBox(unit.Link, widget.NewLabel(unit.Done), widget.NewLabel(unit.Tags)))
+}
+
+func (a *App) NewRefreshDoneSlugButton() *widget.Button {
+	button := widget.NewButton("刷新完成题目", func() {
+		if a.cookie != "" {
+			err := a.lcApi.LoadDone(a.cookie)
+			if err != nil {
+				panic(err)
+			}
+		}
+	})
+	return button
+}
+
 func (a *App) NewActionZone() *fyne.Container {
 	genButton := a.NewGenButton()
+	refreshDoneSlugButton := a.NewRefreshDoneSlugButton()
 	cleanButton := a.NewCleanButton()
-	return container.NewHBox(genButton, cleanButton)
+	return container.NewHBox(genButton, cleanButton, refreshDoneSlugButton)
 }

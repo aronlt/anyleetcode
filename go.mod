@@ -6,6 +6,7 @@ require (
 	fyne.io/fyne/v2 v2.4.0
 	github.com/aronlt/toolkit v1.0.51
 	github.com/dustyRAIN/leetcode-api-go v1.0.1
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cast v1.3.1
 )

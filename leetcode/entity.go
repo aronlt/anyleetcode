@@ -5,8 +5,14 @@ type HyperLinkType int
 const Done HyperLinkType = 1
 const Undo HyperLinkType = 2
 
+type ProblemStatus int
+
+const All ProblemStatus = 1
+const OnlyUndo ProblemStatus = 2
+const OnlyDone ProblemStatus = 3
+
 type Problem struct {
-	AcRate          int
+	AcRate          int64
 	AcceptCount     int64
 	SubmissionCount int64
 	Difficulty      string
@@ -14,7 +20,6 @@ type Problem struct {
 	Url             string
 	TopicTags       []string
 	HasAC           bool
-	CheckAC         bool
 	Slug            string
 }
 
@@ -25,10 +30,12 @@ type HyperLink struct {
 }
 
 type SearchCond struct {
-	AcRate              int
-	SubmissionCountRank int
+	AcRate              int64
+	SubmissionCountRank int64
 	Difficulty          []string
 	TopicTags           []string
+	ExcludeTopicTags    []string
+	ProblemStatus       ProblemStatus
 	Count               int
 	Cookie              string
 }
